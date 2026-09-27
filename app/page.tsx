@@ -81,10 +81,17 @@ function CommunitySection() {
   const [form, setForm] = useState({ name: '', email: '', question: '' })
   const [questions, setQuestions] = useState<{ id: string; name: string; question: string; answer: string | null }[]>([])
   const [status, setStatus] = useState<'idle' | 'sending' | 'done' | 'error'>('idle')
-  useEffect(() => { createClient().from('community_questions').select('id, name, question, answer').not('answer', 'is', null).order('created_at', { ascending: false }).limit(4).then(({ data }) => setQuestions(data || [])) }, [])
+  useEffect(() => {
+    const supabase = createClient()
+    if (!supabase) return
+    supabase.from('community_questions').select('id, name, question, answer').not('answer', 'is', null).order('created_at', { ascending: false }).limit(4).then(({ data }) => setQuestions(data || []))
+  }, [])
   const submit = async (event: React.FormEvent) => {
-    event.preventDefault(); setStatus('sending')
-    const { error } = await createClient().from('community_questions').insert(form)
+    event.preventDefault()
+    const supabase = createClient()
+    if (!supabase) { setStatus('error'); return }
+    setStatus('sending')
+    const { error } = await supabase.from('community_questions').insert(form)
     if (error) { setStatus('error'); return }
     setForm({ name: '', email: '', question: '' }); setStatus('done')
   }
@@ -101,6 +108,7 @@ function ApplicationForm() {
     event.preventDefault()
     setStatus('sending'); setMessage('')
     const supabase = createClient()
+    if (!supabase) { setStatus('error'); setMessage('Applications are temporarily unavailable. Please try again later.'); return }
     const applicationId = crypto.randomUUID()
     const { error } = await supabase.from('applications').insert({ id: applicationId, ...form, age: Number(form.age), height_cm: Number(form.height_cm), weight_kg: Number(form.weight_kg), body_fat_pct: form.body_fat_pct ? Number(form.body_fat_pct) : null })
     if (error) { setStatus('error'); setMessage('We could not save your application. Please check your details and try again.'); return }

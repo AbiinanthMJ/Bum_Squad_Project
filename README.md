@@ -1,6 +1,6 @@
 # Team Yuva — personal coaching site (Next.js + Supabase)
 
-Live deploy: your Vercel URL goes here after the first deploy.
+Live deploy: https://bum-squad.vercel.app (Vercel project `bum_squad`, Production from `main`).
 
 ## Quick start
 

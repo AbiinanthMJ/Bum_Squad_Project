@@ -19,6 +19,7 @@ node_modules
 # Logs
 *.log
 dev.log
+*.err.log
 
 # TypeScript incremental build info
 tsconfig.tsbuildinfo

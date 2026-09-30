@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, Check, LogOut, Target, TrendingUp } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { supabaseEmailRedirect } from '@/lib/auth-redirect'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { authLinkErrorCopy, resendErrorCopy, signInErrorCopy } from '@/lib/auth-messages'
 import { approvalMessage, getApprovalStatus } from '@/lib/approval'
@@ -57,7 +58,7 @@ export default function ProgressPage() {
   // each carrying the per-metric breakdown the hover tooltip shows.
   const trend = useMemo(() => buildTrend(metrics), [metrics])
 
-  const redirectTo = () => process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? `${window.location.origin}/auth/callback`
+  const redirectTo = () => supabaseEmailRedirect('/auth/callback')
 
   const signIn = async (event: React.FormEvent) => {
     event.preventDefault(); setError(''); setResendMessage('')

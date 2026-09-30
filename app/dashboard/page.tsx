@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { ArrowLeft, Check, Download, FileImage, LogOut, Search, Shield, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { checkReviewer, explainEmptyBoard, reviewerReasonCopy, type ReviewerDenied } from '@/lib/reviewer'
+import { ReviewerGate } from '@/components/reviewer-gate'
 
 type Application = { id: string; full_name: string; email: string; age: number; location: string; occupation: string; phone: string; height_cm: number; weight_kg: number; body_fat_pct: number | null; goals: string; concerns: string | null; status: string; reviewer_notes: string | null; created_at: string }
 type AppPhoto = { id: string; original_name: string | null; storage_path: string; signedUrl?: string | null }
@@ -20,17 +22,30 @@ export default function DashboardPage() {
   const [query, setQuery] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  const [gate, setGate] = useState<ReviewerDenied | null>(null)
+  const [diag, setDiag] = useState('')
 
-  const load = async () => {
-    const supabase = createClient()
+  const load = async (explainSignedOut = false) => {
     setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setLoading(false); return }
-    if (user.app_metadata?.role !== 'reviewer') { setError('This account is not authorized as a reviewer.'); setLoading(false); return }
-    setSession(true)
+    const check = await checkReviewer()
+    if (!check.ok) {
+      // Say exactly why access was refused instead of silently returning to the login form.
+      if (check.reason !== 'signed-out' || explainSignedOut) setGate(check)
+      else setError(reviewerReasonCopy(check))
+      setLoading(false)
+      return
+    }
+    setGate(null); setError(''); setSession(true)
+    const supabase = createClient()
     const { data, error: fetchError } = await supabase.from('applications').select('id, full_name, email, age, location, occupation, phone, height_cm, weight_kg, body_fat_pct, goals, concerns, status, reviewer_notes, created_at').order('created_at', { ascending: false })
-    if (fetchError) setError('This account is not authorized as a reviewer.')
-    else setApps(data || [])
+    if (fetchError) { setError('Signed in as ' + check.email + ', but reading applications failed: ' + fetchError.message); setDiag('') }
+    else {
+      const fetched = data || []
+      setApps(fetched)
+      // Zero rows is not proof of an empty table: a missing SELECT policy also
+      // answers 200 with `[]`, so ask the database which of the two it is.
+      setDiag(fetched.length === 0 ? await explainEmptyBoard() : '')
+    }
     setLoading(false)
   }
   useEffect(() => { load() }, [])
@@ -61,12 +76,14 @@ export default function DashboardPage() {
     const supabase = createClient()
     event.preventDefault(); setError('')
     const { error: authError } = await supabase.auth.signInWithPassword(login)
-    if (authError) setError('Invalid email or password.')
-    else load()
+    if (authError) setError('Could not sign in: ' + authError.message)
+    else load(true)
   }
   const signOut = async () => { const supabase = createClient(); await supabase.auth.signOut(); setSession(false); setApps([]); setSelected(null) }
   const update = async (status: string, notes: string) => { const supabase = createClient(); if (!selected) return; const { data, error: updateError } = await supabase.from('applications').update({ status, reviewer_notes: notes, updated_at: new Date().toISOString() }).eq('id', selected.id).select('id'); if (updateError || !data?.length) { setError('Could not update this application.'); return } const next = { ...selected, status, reviewer_notes: notes }; setApps((items) => items.map((item) => item.id === selected.id ? next : item)); setSelected(next) }
   const visible = apps.filter((app) => (filter === 'all' || app.status === filter) && `${app.full_name} ${app.email} ${app.location}`.toLowerCase().includes(query.toLowerCase()))
+  if (gate) return <ReviewerGate check={gate} area="Reviewer desk" onRetry={() => load(true)} />
+
   if (!session && !loading) return <main className="dashboard-login"><a href="/" className="dashboard-back"><ArrowLeft size={16} /> Back to Team Yuva</a><div className="login-panel"><div className="brand"><span className="brand-mark">Y</span> TEAM YUVA</div><Shield size={30} /><p className="eyebrow">Private workspace</p><h1>Reviewer login</h1><p>Access is limited to approved Team Yuva reviewers.</p><form onSubmit={signIn}><label>Email<input className="form-input" type="email" required value={login.email} onChange={(e) => setLogin({ ...login, email: e.target.value })} /></label><label>Password<input className="form-input" type="password" required value={login.password} onChange={(e) => setLogin({ ...login, password: e.target.value })} /></label>{error && <p className="error-text">{error}</p>}<button className="button button-lime">Sign in</button></form></div></main>
   return <main className="dashboard">
     <header className="dashboard-header">
@@ -81,7 +98,7 @@ export default function DashboardPage() {
       </div>
       <div className="application-table">
         <div className="table-head"><span>Applicant</span><span>Details</span><span>Applied</span><span>Status</span></div>
-        {loading ? <p className="empty">Loading applications…</p> : visible.length === 0 ? <p className="empty">No applications match this view.</p> : visible.map((app) => <button className="table-row" key={app.id} onClick={() => setSelected(app)}><span><strong>{app.full_name}</strong><small>{app.email}</small></span><span>{app.location}<small>{app.occupation}</small></span><span>{new Date(app.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span><span className={`status status-${app.status}`}>{app.status}</span></button>)}
+        {loading ? <p className="empty">Loading applications…</p> : visible.length === 0 ? <p className="empty">{diag || 'No applications match this view.'}</p> : visible.map((app) => <button className="table-row" key={app.id} onClick={() => setSelected(app)}><span><strong>{app.full_name}</strong><small>{app.email}</small></span><span>{app.location}<small>{app.occupation}</small></span><span>{new Date(app.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span><span className={`status status-${app.status}`}>{app.status}</span></button>)}
       </div>
     </section>
     {selected && <div className="review-overlay" role="dialog" aria-modal="true">

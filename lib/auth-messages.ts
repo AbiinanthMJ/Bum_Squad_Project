@@ -13,7 +13,7 @@ export const isEmailNotConfirmed = (error: AuthErrorLike) =>
   codeOf(error) === 'email_not_confirmed' || textOf(error).includes('not confirmed')
 
 export function signUpErrorCopy(error: AuthErrorLike): string {
-  if (isRateLimited(error)) return 'The confirmation e-mail service is rate limited right now (free shared limit). Your details are saved — wait 2–3 minutes, then press "Resend confirmation e-mail" below.'
+  if (isRateLimited(error)) return 'The confirmation e-mail service is rate limited right now (free shared limit). Wait 2–3 minutes, then press "Resend confirmation e-mail" below.'
   if (codeOf(error) === 'email_address_invalid') return 'That e-mail address was rejected. Please use a different mailbox.'
   if (codeOf(error) === 'weak_password') return 'Use at least 8 characters, mixing letters and numbers.'
   if (codeOf(error) === 'user_already_exists' || textOf(error).includes('already')) return 'This e-mail is already registered. Use "Sign in to your progress" instead.'
@@ -21,14 +21,22 @@ export function signUpErrorCopy(error: AuthErrorLike): string {
 }
 
 export function signInErrorCopy(error: AuthErrorLike): string {
-  if (isEmailNotConfirmed(error)) return 'Your e-mail is not confirmed yet. Open the confirmation link we sent you — or press "Resend confirmation e-mail" below.'
+  if (isEmailNotConfirmed(error)) return 'Your e-mail is not confirmed yet. Open the confirmation link we sent you, type the 6-digit code from that e-mail on the sign-up page, or press "Resend confirmation e-mail" below.'
   if (isRateLimited(error)) return 'Too many attempts right now. Wait a minute and try again — your e-mail is kept in the box.'
   return 'Invalid email or password.'
 }
 
 export function resendErrorCopy(error: AuthErrorLike): string {
-  if (isRateLimited(error)) return 'Still rate limited — give it a few more minutes, then try again. Your e-mail is saved below.'
+  if (isRateLimited(error)) return 'Still rate limited — give it a few more minutes, then try again.'
   return 'We could not send that e-mail. Try again in a moment.'
+}
+
+// 6-digit code entry (verifyOtp) failures, shared by the sign-up screen.
+export function otpErrorCopy(error: AuthErrorLike): string {
+  if (isRateLimited(error)) return 'Too many code attempts right now. Wait a minute, then try the same code again.'
+  if (codeOf(error) === 'otp_expired' || textOf(error).includes('expired')) return 'That code is not valid any more — re-check the six digits from the newest e-mail, or press "Resend confirmation e-mail" for a fresh one.'
+  if (textOf(error).includes('invalid') || textOf(error).includes('incorrect')) return 'Those digits do not match. Check the six digits in the confirmation e-mail and try again.'
+  return 'We could not confirm that code. Press "Resend confirmation e-mail" and use the newest one.'
 }
 
 export function authLinkErrorCopy(reason: string): string {

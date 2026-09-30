@@ -1,74 +1,143 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Canvas, useFrame } from '@react-three/fiber'
-import { Float, Environment, OrbitControls, Sphere, Torus } from '@react-three/drei'
+import { Suspense, useEffect, useRef, useState } from 'react'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { Float, Environment, Sphere } from '@react-three/drei'
 import { ArrowDown, ArrowUpRight, Check, Camera, FileImage, Menu, Send, Sparkles, Upload, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { BrandLogo } from '@/components/logo'
 
 function OrbitingCore({ viewportWidth }: { viewportWidth: number }) {
-  const group = useMemo(() => ({ rotation: 0, scroll: 0 }), [])
-  const target = useRef(0)
+  // The animation is driven by mutating the three.js objects through refs inside
+  // useFrame. The previous version kept its state in a plain object and read it
+  // during React render to build the transform props, so the props only updated
+  // when React happened to re-render - the core drifted away from the camera and
+  // looked like it was shrinking over time.
+  // Narrow structural types for the three.js nodes this component drives. `three`
+  // ships no bundled types and @types/three is only present transitively through
+  // @react-three/drei, so importing from 'three' here would not type-check.
+  type AnimatedNode = {
+    position: { set: (x: number, y: number, z: number) => void }
+    rotation: { set: (x: number, y: number, z: number) => void; x: number; y: number; z: number }
+    scale: { setScalar: (value: number) => void }
+  }
+
+  const root = useRef<AnimatedNode | null>(null)
+  const shell = useRef<AnimatedNode | null>(null)
+  const ringOuter = useRef<AnimatedNode | null>(null)
+  const ringInner = useRef<AnimatedNode | null>(null)
+  const scrollTarget = useRef(0)
+  const scroll = useRef(0)
+
   useEffect(() => {
-    const update = () => { target.current = window.scrollY / Math.max(document.body.scrollHeight - window.innerHeight, 1) }
+    const update = () => { scrollTarget.current = window.scrollY / Math.max(document.body.scrollHeight - window.innerHeight, 1) }
     update()
     window.addEventListener('scroll', update, { passive: true })
     return () => window.removeEventListener('scroll', update)
   }, [])
-  useFrame((_, delta) => {
-    group.rotation += delta * (0.28 + group.scroll * 0.45)
-    group.scroll += (target.current - group.scroll) * Math.min(delta * 4, 1)
-  })
 
   // Responsive scale and position so the core fits mobile, tablet and desktop
   // without clipping, overflowing, or running over the hero text.
   const isMobile = viewportWidth < 700
   const isTablet = viewportWidth >= 700 && viewportWidth < 1024
   const baseScale = isMobile ? 0.32 : isTablet ? 0.4 : 0.48
-  const posX = isMobile ? 0 : group.scroll * -0.7
-  const posY = isMobile ? -0.2 : group.scroll * 0.35
-  const posZ = isMobile ? -0.3 : group.scroll * -0.5
 
-  return <group rotation={[0.2 + group.scroll * 1.15, group.scroll * 3.8, group.scroll * 0.4]} position={[posX, posY, posZ]} scale={baseScale + group.scroll * 0.08}>
-    <Float speed={1.3 + group.scroll * 1.4} rotationIntensity={0.35 + group.scroll * 0.25} floatIntensity={0.7 + group.scroll * 0.35}>
-      <mesh rotation={[0.4, group.rotation, 0.3]}>
+  useFrame((state, delta) => {
+    // Clamp delta so a backgrounded tab does not jump the animation on return.
+    const dt = Math.min(delta, 0.05)
+    scroll.current += (scrollTarget.current - scroll.current) * Math.min(dt * 4, 1)
+    const s = scroll.current
+    const t = state.clock.elapsedTime
+
+    if (root.current) {
+      // Depth stays fixed on purpose: pushing the core down the Z axis is what made
+      // it shrink into the distance as the page scrolled.
+      root.current.position.set(isMobile ? 0 : s * -0.7, isMobile ? -0.2 : s * 0.35, 0)
+      root.current.rotation.set(0.2 + s * 1.15, t * 0.3 + s * 3.8, s * 0.4)
+      // A slow, bounded breathing pulse instead of a scroll-driven scale, so the
+      // core never drifts smaller than its base size.
+      root.current.scale.setScalar(baseScale * (1 + Math.sin(t * 1.1) * 0.03))
+    }
+    if (shell.current) {
+      shell.current.rotation.y = t * 0.4
+      shell.current.rotation.x = 0.4 + Math.sin(t * 0.55) * 0.16
+    }
+    if (ringOuter.current) ringOuter.current.rotation.z = t * 0.35
+    if (ringInner.current) ringInner.current.rotation.x = t * -0.28
+  })
+
+  return <group ref={root}>
+    <Float speed={1.3} rotationIntensity={0.35} floatIntensity={0.7}>
+      <mesh ref={shell} rotation={[0.4, 0, 0.3]}>
         <icosahedronGeometry args={[1.5, 1]} />
         <meshStandardMaterial color="#c5ff3d" roughness={0.25} metalness={0.7} wireframe />
       </mesh>
       <Sphere args={[0.73, 32, 32]}>
         <meshStandardMaterial color="#f7f7f2" roughness={0.18} metalness={0.2} />
       </Sphere>
-      <Torus args={[1.95, 0.018, 12, 96]} rotation={[Math.PI / 2, 0.2, 0]}>
+      <mesh ref={ringOuter} rotation={[Math.PI / 2, 0.2, 0]}>
+        <torusGeometry args={[1.95, 0.018, 12, 96]} />
         <meshStandardMaterial color="#c5ff3d" emissive="#789900" emissiveIntensity={0.8} />
-      </Torus>
-      <Torus args={[2.18, 0.012, 12, 96]} rotation={[0.35, Math.PI / 2, 0.8]}>
+      </mesh>
+      <mesh ref={ringInner} rotation={[0.35, Math.PI / 2, 0.8]}>
+        <torusGeometry args={[2.18, 0.012, 12, 96]} />
         <meshStandardMaterial color="#f7f7f2" transparent opacity={0.65} />
-      </Torus>
+      </mesh>
     </Float>
   </group>
 }
 
+function CameraRig({ viewportWidth }: { viewportWidth: number }) {
+  const camera = useThree((state) => state.camera)
+  const size = useThree((state) => state.size)
+
+  useEffect(() => {
+    const perspective = camera as unknown as { aspect: number; position: { x: number; y: number; z: number }; updateProjectionMatrix: () => void }
+    // Keep the whole icosahedron + rings inside the frame: narrower screens
+    // get a wider aspect-aware pullback instead of a remounted <Canvas>.
+    // The camera only ever moves in X/Y here and Z stays on the pullback value,
+    // so the core keeps a constant apparent size.
+    const aspect = size.width / Math.max(size.height, 1)
+    const baseZ = viewportWidth < 500 ? 7.2 : viewportWidth < 800 ? 6.2 : 5.5
+    perspective.position.z = aspect < 1 ? baseZ / Math.max(aspect, 0.5) : baseZ
+    perspective.aspect = aspect
+    perspective.updateProjectionMatrix()
+  }, [camera, size, viewportWidth])
+
+  return null
+}
+
 function HeroScene() {
-  const [width, setWidth] = useState(1200)
+  // `null` until the client measures the real viewport — avoids an SSR/mobile
+  // hydration mismatch where the first paint assumes a 1200px desktop canvas.
+  const [width, setWidth] = useState<number | null>(null)
   useEffect(() => {
     const onResize = () => setWidth(window.innerWidth)
     onResize()
     window.addEventListener('resize', onResize, { passive: true })
-    return () => window.removeEventListener('resize', onResize)
+    window.addEventListener('orientationchange', onResize)
+    return () => {
+      window.removeEventListener('resize', onResize)
+      window.removeEventListener('orientationchange', onResize)
+    }
   }, [])
 
-  // Camera pulls back on narrower viewports so the ball never clips its canvas.
-  const cameraZ = width < 500 ? 7.2 : width < 800 ? 6.2 : 5.5
   return (
     <div className="hero-scene" aria-hidden="true">
-      <Canvas camera={{ position: [0, 0, cameraZ], fov: 42 }} gl={{ antialias: true, alpha: true }}>
+      <Canvas
+        camera={{ position: [0, 0, 6.2], fov: 42 }}
+        dpr={[1, 2]}
+        gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
+        resize={{ scroll: false, debounce: 120 }}
+      >
         <ambientLight intensity={1.4} />
         <directionalLight position={[3, 4, 5]} intensity={3} color="#c5ff3d" />
-        <OrbitingCore viewportWidth={width} />
-        <Environment preset="studio" />
-        <OrbitControls enableZoom={false} enablePan={false} autoRotate autoRotateSpeed={0.35} />
+        <Suspense fallback={null}>
+          <OrbitingCore viewportWidth={width ?? 1200} />
+          <Environment preset="studio" />
+        </Suspense>
+        <CameraRig viewportWidth={width ?? 1200} />
       </Canvas>
     </div>
   )
@@ -80,20 +149,23 @@ const initialForm: FormState = { email: '', full_name: '', age: '', location: ''
 function CommunitySection() {
   const [form, setForm] = useState({ name: '', email: '', question: '' })
   const [questions, setQuestions] = useState<{ id: string; name: string; question: string; answer: string | null }[]>([])
+  const [errorDetail, setErrorDetail] = useState('')
   const [status, setStatus] = useState<'idle' | 'sending' | 'done' | 'error'>('idle')
   useEffect(() => { createClient().from('community_questions').select('id, name, question, answer').not('answer', 'is', null).order('created_at', { ascending: false }).limit(4).then(({ data }) => setQuestions(data || [])) }, [])
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setStatus('sending')
     const { error } = await createClient().from('community_questions').insert(form)
-    if (error) { setStatus('error'); return }
+    // Surface the real reason (missing table, blocked RLS, offline) instead of failing silently.
+    if (error) { setStatus('error'); setErrorDetail(error.message); return }
     setForm({ name: '', email: '', question: '' }); setStatus('done')
   }
-  return <section className="community-section section" id="community"><div className="section-label"><span>04</span><span>Ask the team</span></div><div className="community-layout"><div><p className="eyebrow lime-text"><Sparkles size={15} /> Real answers, no noise</p><h2>Bring the<br /><em>question.</em></h2><p className="body-copy">Wondering how to start, what to eat, or whether coaching is right for you? Ask the team. We answer the questions that help you move with more clarity.</p><div className="question-list">{questions.length > 0 ? questions.map((item) => <article key={item.id}><p>&ldquo;{item.question}&rdquo;</p><small>{item.name} · BUM. reply</small><strong>{item.answer}</strong></article>) : <p className="empty">The team is preparing the first answers. Your question can be first.</p>}</div></div><form className="question-form" onSubmit={submit}><p className="eyebrow">Open channel</p><h3>What&apos;s on your mind?</h3><label>Your name<input className="form-input" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label><label>Email address<input className="form-input" required type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label><label>Your question<textarea className="form-input" required minLength={10} rows={5} value={form.question} onChange={(e) => setForm({ ...form, question: e.target.value })} /></label>{status === 'done' && <p className="success-text">Question received. The team will reply soon.</p>}{status === 'error' && <p className="error-text">We could not send that yet. Please try again.</p>}<button className="button button-lime" disabled={status === 'sending'}>{status === 'sending' ? 'Sending…' : 'Send question'} <Send size={16} /></button></form></div></section>
+  return <section className="community-section section" id="community"><div className="section-label"><span>04</span><span>Ask the team</span></div><div className="community-layout"><div><p className="eyebrow lime-text"><Sparkles size={15} /> Real answers, no noise</p><h2>Bring the<br /><em>question.</em></h2><p className="body-copy">Wondering how to start, what to eat, or whether coaching is right for you? Ask the team. We answer the questions that help you move with more clarity.</p><div className="question-list">{questions.length > 0 ? questions.map((item) => <article key={item.id}><p>&ldquo;{item.question}&rdquo;</p><small>{item.name} · BUM. reply</small><strong>{item.answer}</strong></article>) : <p className="empty">The team is preparing the first answers. Your question can be first.</p>}</div></div><form className="question-form" onSubmit={submit}><p className="eyebrow">Open channel</p><h3>What&apos;s on your mind?</h3><label>Your name<input className="form-input" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label><label>Email address<input className="form-input" required type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label><label>Your question<textarea className="form-input" required minLength={10} rows={5} value={form.question} onChange={(e) => setForm({ ...form, question: e.target.value })} /></label>{status === 'done' && <p className="success-text">Question received. The team will reply soon.</p>}{status === 'error' && <p className="error-text">We could not send that yet. Please try again.{errorDetail && <small> ({errorDetail})</small>}</p>}<button className="button button-lime" disabled={status === 'sending'}>{status === 'sending' ? 'Sending…' : 'Send question'} <Send size={16} /></button></form></div></section>
 }
 
 function ApplicationForm() {
   const [form, setForm] = useState(initialForm)
   const [files, setFiles] = useState<File[]>([])
+  const [skipped, setSkipped] = useState<string[]>([])
   const [status, setStatus] = useState<'idle' | 'sending' | 'done' | 'error'>('idle')
   const [message, setMessage] = useState('')
   const update = (key: keyof FormState, value: string | boolean) => setForm((current) => ({ ...current, [key]: value }))
@@ -103,16 +175,23 @@ function ApplicationForm() {
     const supabase = createClient()
     const applicationId = crypto.randomUUID()
     const { error } = await supabase.from('applications').insert({ id: applicationId, ...form, age: Number(form.age), height_cm: Number(form.height_cm), weight_kg: Number(form.weight_kg), body_fat_pct: form.body_fat_pct ? Number(form.body_fat_pct) : null })
-    if (error) { setStatus('error'); setMessage('We could not save your application. Please check your details and try again.'); return }
+    if (error) { setStatus('error'); setMessage('We could not save your application. ' + error.message); return }
+    // Photos go to the private 'application-images' bucket, then get linked in the
+    // 'application_images' table. Failures are collected instead of silently ignored, so
+    // the success card can tell the applicant exactly which photo needs resending.
+    const failed: string[] = []
     for (const file of files) {
       const path = `${applicationId}/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '-')}`
       const uploaded = await supabase.storage.from('application-images').upload(path, file)
-      if (!uploaded.error) await supabase.from('application_images').insert({ application_id: applicationId, storage_path: path, original_name: file.name })
+      if (uploaded.error) { failed.push(file.name + ' - ' + uploaded.error.message); continue }
+      const linked = await supabase.from('application_images').insert({ application_id: applicationId, storage_path: path, original_name: file.name })
+      if (linked.error) failed.push(file.name + ' - ' + linked.error.message)
     }
+    setSkipped(failed)
     setStatus('done')
   }
   const inputClass = 'form-input'
-  if (status === 'done') return <div className="success-card"><div className="success-icon"><Check /></div><p className="eyebrow">Application received</p><h3>You are on the right track.</h3><p>Thanks for trusting BUM. with your next chapter. Our coaching team will review your details and get in touch soon.</p><a className="button button-dark" href="#top">Back to top <ArrowUpRight size={16} /></a></div>
+  if (status === 'done') return <div className="success-card"><div className="success-icon"><Check /></div><p className="eyebrow">Application received</p><h3>You are on the right track.</h3><p>Thanks for trusting BUM. with your next chapter. Our coaching team will review your details and get in touch soon.</p>{skipped.length > 0 && <p className="rate-note">{skipped.length === 1 ? 'One photo' : skipped.length + ' photos'} could not be uploaded. Your application is saved - reply to our confirmation e-mail and we will collect them directly.<br /><small>{skipped.join(' | ')}</small></p>}<a className="button button-dark" href="#top">Back to top <ArrowUpRight size={16} /></a></div>
   return <form className="application-form" onSubmit={submit}>
     <div className="form-heading"><p className="eyebrow">The first step</p><h3>Tell us where you&apos;re starting.</h3><p>Be honest, be specific. Better inputs create better coaching.</p></div>
     <div className="form-grid"><label>Email address<input className={inputClass} required type="email" value={form.email} onChange={(e) => update('email', e.target.value)} /></label><label>Full name<input className={inputClass} required value={form.full_name} onChange={(e) => update('full_name', e.target.value)} /></label><label>Age<input className={inputClass} required type="number" min="13" max="100" value={form.age} onChange={(e) => update('age', e.target.value)} /></label><label>Location<input className={inputClass} required value={form.location} onChange={(e) => update('location', e.target.value)} /></label><label>Occupation<input className={inputClass} required value={form.occupation} onChange={(e) => update('occupation', e.target.value)} /></label><label>Contact number<input className={inputClass} required type="tel" value={form.phone} onChange={(e) => update('phone', e.target.value)} /></label><label>Height <span>(cm)</span><input className={inputClass} required type="number" value={form.height_cm} onChange={(e) => update('height_cm', e.target.value)} /></label><label>Weight <span>(kg)</span><input className={inputClass} required type="number" value={form.weight_kg} onChange={(e) => update('weight_kg', e.target.value)} /></label><label>Body fat <span>(optional)</span><input className={inputClass} type="number" value={form.body_fat_pct} onChange={(e) => update('body_fat_pct', e.target.value)} /></label></div>

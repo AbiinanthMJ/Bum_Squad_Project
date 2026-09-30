@@ -5,6 +5,8 @@ import { ArrowLeft, Plus, Save, Shield, Target } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { checkReviewer, reviewerReasonCopy, type ReviewerDenied } from '@/lib/reviewer'
+import { ReviewerGate } from '@/components/reviewer-gate'
 import { Kpi, TrendChart, buildTrend } from '@/components/analytics'
 
 type Profile = { id: string; email: string; full_name: string | null; status: string; is_reviewer: boolean; created_at: string }
@@ -24,22 +26,28 @@ export default function AdminUserDashboardPage() {
   const [saving, setSaving] = useState(false)
   const [session, setSession] = useState(false)
   const [login, setLogin] = useState({ email: '', password: '' })
+  const [gate, setGate] = useState<ReviewerDenied | null>(null)
 
   const signIn = async (event: React.FormEvent) => {
     event.preventDefault(); setError('')
     const supabase = createClient()
     const { error: authError } = await supabase.auth.signInWithPassword(login)
-    if (authError) setError('Invalid email or password.')
-    else load()
+    if (authError) setError('Could not sign in: ' + authError.message)
+    else load(true)
   }
 
-  const load = async () => {
-    const supabase = createClient()
+  const load = async (explainSignedOut = false) => {
     setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setLoading(false); return }
-    if (user.app_metadata?.role !== 'reviewer') { setError('This account is not authorized as an admin.'); setLoading(false); return }
-    setSession(true)
+    const check = await checkReviewer()
+    if (!check.ok) {
+      // Say exactly why access was refused instead of silently returning to the login form.
+      if (check.reason !== 'signed-out' || explainSignedOut) setGate(check)
+      else setError(reviewerReasonCopy(check))
+      setLoading(false)
+      return
+    }
+    setGate(null); setError(''); setSession(true)
+    const supabase = createClient()
     const { data: prof } = await supabase.from('user_profiles').select('id, email, full_name, status, is_reviewer, created_at').eq('id', userId).maybeSingle()
     setProfile(prof || null)
     const { data: metrics, error: fetchError } = await supabase.from('client_progress').select('id, metric, value, target, note, week_start').eq('user_id', userId).order('week_start', { ascending: true })
@@ -76,6 +84,8 @@ export default function AdminUserDashboardPage() {
   }
 
   if (loading) return <main className="progress-shell"><p className="eyebrow">Loading user dashboard…</p></main>
+
+  if (gate) return <ReviewerGate check={gate} area="User dashboard" onRetry={() => load(true)} />
 
   if (!session) return <main className="dashboard-login"><a href="/admin/users" className="dashboard-back"><ArrowLeft size={16} /> Back to accounts</a><div className="login-panel"><div className="brand"><span className="brand-mark">Y</span> TEAM YUVA</div><Shield size={30} /><p className="eyebrow">Admin access</p><h1>Sign in required.</h1><p>Sign in with an approved admin account to view this dashboard.</p><form onSubmit={signIn}><label>Email<input className="form-input" type="email" required autoComplete="email" value={login.email} onChange={(e) => setLogin({ ...login, email: e.target.value })} /></label><label>Password<input className="form-input" type="password" required autoComplete="current-password" value={login.password} onChange={(e) => setLogin({ ...login, password: e.target.value })} /></label>{error && <p className="error-text">{error}</p>}<button className="button button-lime">Sign in</button></form></div></main>
 

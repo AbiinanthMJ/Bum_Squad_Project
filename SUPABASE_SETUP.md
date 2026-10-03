@@ -10,7 +10,7 @@ inside the Supabase project for every page to work.
 > 3. **Recommended:** in Supabase → **Authentication → Sign In / Providers → Email**, turn **Confirm email OFF** (Step 3c). Sign-up then returns a session instantly, no confirmation e-mail is sent, and the 2-per-hour mail cap can never rate-limit a visitor.
 > 4. Add `http://localhost:3000/auth/callback` under **Authentication → URL Configuration → Redirect URLs**.
 > 5. Make sure the tables/bucket from [Step 4](#step-4--database-schema-fresh-project-only) exist (skip if you already use the v0-connected database).
-> 6. Run [`supabase_verify.sql`](./supabase_verify.sql) (Supabase → **SQL Editor → New query → Run**). It is a superset of [`sql/setup_approval_system.sql`](./sql/setup_approval_system.sql): account approvals, `user_profiles`, `is_reviewer()`, reviewer visibility **and the `application-images` storage bucket** — then it prints a verification report. Safe to re-run, nothing is ever deleted.
+> 6. Run [`sql/supabase_verify.sql`](./sql/supabase_verify.sql) (Supabase → **SQL Editor → New query → Run**). It is a superset of [`sql/setup_approval_system.sql`](./sql/setup_approval_system.sql): account approvals, `user_profiles`, `is_reviewer()`, reviewer visibility **and the `application-images` storage bucket** — then it prints a verification report. Safe to re-run, nothing is ever deleted.
 > 7. Run `pnpm db:check` to confirm tables, bucket and public-write policies from your machine.
 > 8. Restart `pnpm dev` and sign in.
 
@@ -171,6 +171,12 @@ Brevo's free tier allows **300 transactional e-mails per day** and only needs a 
 verified, so it is the quickest option before you own a domain. Resend refuses recipients other
 than your own account address until a domain is verified.
 
+> **Brevo gotcha — start here.** A new Brevo account is **manually approved by Brevo before it
+> can send anything** ("once we approve your account for sending…"). Until that lands, every
+> message fails silently. Create the account first and wait for the approval e-mail before
+> debugging anything else. The **sender address** is a separate, later step: Brevo sends a
+> verification link to that address, and you cannot send until it is clicked.
+
 #### Turn it on and prove it works
 
 1. Paste the six values, **Save**, then send a first message from the same page. To check it
@@ -194,6 +200,30 @@ than your own account address until a domain is verified.
 3. Re-enable **Confirm email** (Step 3 "Sign In / Providers → Email") only after 1 and 2 pass,
    then paste the template from the section above so the link **and** the 6-digit code work.
 
+#### Custom SMTP is also worth wiring up on its own, with Confirm email OFF
+
+Steps 1–2 are useful **even if you never turn Confirm email back on**. The repo's recommended
+mode (Step 3c) sends no sign-up e-mail at all, but **password reset still needs SMTP** — and
+there is no reset screen in this app:
+
+- `app/progress/page.tsx` offers sign-in/sign-out only, and there is no `/auth/reset-password`
+  route (routes are `auth/callback`, `auth/sign-up`, `progress`, `dashboard`, `admin/*`,
+  `diagnostics`). Nothing in the codebase calls `resetPasswordForEmail` or `updateUser`.
+
+So once custom SMTP is live a client *can* recover a forgotten password, but the link lands on
+**Supabase's own hosted "Set new password" page**, not on your domain, because no route of ours
+catches it. That is fine and secure — just not branded. A branded flow means adding an
+`/auth/reset-password` route plus a "Forgot password?" link that calls
+`supabaseEmailRedirect()` (already in `lib/auth-redirect.ts`); that is a feature, not a setup step.
+
+**Add the recovery redirect URL.** Authentication → URL Configuration → Redirect URLs should
+list `http://localhost:3000/auth/callback` *and* `https://<your-app>.vercel.app/auth/callback`,
+or the reset link has nowhere valid to return to.
+
+Keep Confirm email **OFF** even with Brevo connected: sign-up keeps returning a session
+instantly, so no visitor ever waits on a mail server or trips the rate limit, while recovery is
+available. Turning it back on reintroduces an e-mail dependency at sign-up for no benefit here.
+
 ### Step 3c — Approval-only mode (no confirmation e-mails) — the recommended setup
 
 **This is how this app should run.** It needs no SMTP provider, no service-role key and no
@@ -202,7 +232,7 @@ No e-mail is sent during sign-up, so the 2-per-hour mail cap never applies.
 
 1. **Authentication → Sign In / Providers → Email → Confirm email OFF → Save.** Sign-up then
    returns a session straight away and `/auth/sign-up` sends the new account to `/progress`.
-2. **Run `supabase_verify.sql`** so `user_profiles`, the `handle_new_user()` trigger and the
+2. **Run `sql/supabase_verify.sql`** so `user_profiles`, the `handle_new_user()` trigger and the
    reviewer policies exist. Without the trigger no profile row is created and the gate has
    nothing to check.
 3. **Promote your own account to reviewer** (App metadata `{"role": "reviewer"}`, or the SQL the
@@ -360,7 +390,7 @@ create policy "application_images read reviewers" on public.application_images
 > **Already on an existing database?** Skipping this block is the usual reason
 > `/dashboard` shows *"00 total"* while rows are visible in the Table Editor —
 > a missing `SELECT` policy makes PostgREST return an empty list with **no**
-> error. [`supabase_verify.sql`](./supabase_verify.sql) section 8 re-applies
+> error. [`sql/supabase_verify.sql`](./sql/supabase_verify.sql) section 8 re-applies
 > exactly the `applications` + `application_images` policies above, so you can
 > repair an existing project without re-running the whole schema.
 
@@ -476,7 +506,7 @@ If the auth check created an account (`db-check+…@mailinator.com`), delete it 
 | The app crashes at load with `supabaseKey is required` | neither `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` nor `NEXT_PUBLIC_SUPABASE_ANON_KEY` is set. |
 | Reviewer desk: *"This account is not authorized as a reviewer."* | The signed-in user lacks `{"role": "reviewer"}` in App metadata, or the `applications` SELECT policy is missing (Step 4). |
 | Confirmation e-mail link returns to the wrong place | Add the exact URL to **Authentication → URL Configuration → Redirect URLs**. |
-| Photos never appear for reviewers | The `application-images` bucket or its storage policies are missing — run `supabase_verify.sql` (section 6 creates the bucket). The application form now lists any photo that failed to upload instead of ignoring it. |
+| Photos never appear for reviewers | The `application-images` bucket or its storage policies are missing — run `sql/supabase_verify.sql` (section 6 creates the bucket). The application form now lists any photo that failed to upload instead of ignoring it. |
 | The public forms show a red message with a Supabase error in brackets | That is the real error text surfaced on purpose (missing table/column, blocked RLS, offline). Run `pnpm db:check` to see which check fails. |
 | Confirmation e-mail never arrives for a client or test address | **Confirm email** is ON. The built-in SMTP server only sends to **Organization → Team** members (2/hour) and fails with `Email address not authorized` for everyone else. Turn **Confirm email OFF** (Step 3c), or configure custom SMTP (Step 3b). |
 | Template edits on *Confirm sign up* will not save | The template editor stays read-only until custom SMTP is configured — that is the dashboard banner, not a bug. |
@@ -507,7 +537,7 @@ If the auth check created an account (`db-check+…@mailinator.com`), delete it 
   email-confirmation flow (`PKCE code verifier not found in storage` in dev.log).
   (Next.js 16 renamed `middleware.ts` → `proxy.ts`; the old filename now only
   emits a deprecation warning.) Redeploy after merging so the proxy goes live.
-- If `/admin/users` shows "Approval tables missing", run `supabase_verify.sql`
+- If `/admin/users` shows "Approval tables missing", run `sql/supabase_verify.sql`
   (Supabase → **SQL Editor → New query → Run**). It re-applies
   `sql/setup_approval_system.sql` idempotently (no data deleted) and prints a
   verification report of tables, policies, bucket, and row counts.

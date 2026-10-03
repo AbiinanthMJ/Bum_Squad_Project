@@ -15,7 +15,7 @@ Live deploy: **https://bum-squad-project-dwcj.vercel.app** (Vercel project `bum-
 ### Public site (`/`)
 
 Single-page marketing site with five sections — *Our method*, *The BUM. cycle*, *Apply to BUM.*,
-*Good to know* (FAQ) and *Ask the team* — plus a 3D hero built with React Three Fiber.
+*Good to know* (FAQ) and *Ask the team* — plus a 3D hero built with React Three Fiber — drag the core ball around inside its wireframe cage (double-click to send it back to centre).
 
 Two **write** flows run straight from the homepage, both with open RLS insert policies so no
 session is needed:

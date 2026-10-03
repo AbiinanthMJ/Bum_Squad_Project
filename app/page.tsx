@@ -2,11 +2,16 @@
 
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { Float, Environment, Sphere } from '@react-three/drei'
+import { Float, Environment } from '@react-three/drei'
 import { ArrowDown, ArrowUpRight, Check, Camera, FileImage, Menu, Send, Sparkles, Upload, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { BrandLogo } from '@/components/logo'
+
+// How far the core ball may travel from the centre, in the group's local units.
+// The wireframe cage has radius 1.5 and the ball 0.73, so 0.6 keeps the ball
+// fully inside the cage while still feeling free.
+const DRAG_LIMIT = 0.6
 
 function OrbitingCore({ viewportWidth }: { viewportWidth: number }) {
   // The animation is driven by mutating the three.js objects through refs inside
@@ -29,6 +34,16 @@ function OrbitingCore({ viewportWidth }: { viewportWidth: number }) {
   const ringInner = useRef<AnimatedNode | null>(null)
   const scrollTarget = useRef(0)
   const scroll = useRef(0)
+  // Drag state for the white core ball. `ball` is the mesh; `dragTarget` is
+  // where it wants to be (local units, pre-scale) and `dragCurrent` is the
+  // smoothed position written to the mesh every frame.
+  const ball = useRef<AnimatedNode | null>(null)
+  const dragTarget = useRef({ x: 0, y: 0 })
+  const dragCurrent = useRef({ x: 0, y: 0 })
+  const dragging = useRef(false)
+  const lastPointer = useRef({ x: 0, y: 0 })
+  const gl = useThree((state) => state.gl)
+  const camera = useThree((state) => state.camera)
 
   useEffect(() => {
     const update = () => { scrollTarget.current = window.scrollY / Math.max(document.body.scrollHeight - window.innerHeight, 1) }
@@ -42,6 +57,49 @@ function OrbitingCore({ viewportWidth }: { viewportWidth: number }) {
   const isMobile = viewportWidth < 700
   const isTablet = viewportWidth >= 700 && viewportWidth < 1024
   const baseScale = isMobile ? 0.32 : isTablet ? 0.4 : 0.48
+
+  // `baseScale` changes with the viewport; the window-level drag listener reads
+  // the latest value through this ref instead of re-subscribing on resize.
+  const baseScaleRef = useRef(baseScale)
+  baseScaleRef.current = baseScale
+
+  // Window-level listeners (not object-level) so the drag keeps tracking even
+  // when the pointer slides off the ball, and so a touch scroll that starts
+  // vertically still ends the drag cleanly via pointercancel.
+  useEffect(() => {
+    const endDrag = () => {
+      if (!dragging.current) return
+      dragging.current = false
+      document.body.style.userSelect = ''
+      const canvasEl = gl.domElement as unknown as { style: { cursor: string } }
+      canvasEl.style.cursor = ''
+    }
+    const onMove = (event: PointerEvent) => {
+      if (!dragging.current) return
+      // Convert screen pixels to local units so a drag of N pixels moves the
+      // ball the same visual distance at every breakpoint and camera pullback.
+      const cam = camera as unknown as { fov: number; position: { z: number } }
+      const canvasEl = gl.domElement as unknown as { clientHeight: number }
+      const viewHeight = 2 * Math.tan(((cam.fov || 42) * Math.PI) / 360) * Math.abs(cam.position.z)
+      const perPixel = viewHeight / Math.max(canvasEl.clientHeight, 1) / baseScaleRef.current
+      const dx = (event.clientX - lastPointer.current.x) * perPixel
+      const dy = (event.clientY - lastPointer.current.y) * perPixel
+      lastPointer.current = { x: event.clientX, y: event.clientY }
+      dragTarget.current.x = Math.max(-DRAG_LIMIT, Math.min(DRAG_LIMIT, dragTarget.current.x + dx))
+      dragTarget.current.y = Math.max(-DRAG_LIMIT, Math.min(DRAG_LIMIT, dragTarget.current.y - dy))
+    }
+    window.addEventListener('pointermove', onMove, { passive: true })
+    window.addEventListener('pointerup', endDrag)
+    window.addEventListener('pointercancel', endDrag)
+    window.addEventListener('blur', endDrag)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', endDrag)
+      window.removeEventListener('pointercancel', endDrag)
+      window.removeEventListener('blur', endDrag)
+      endDrag()
+    }
+  }, [camera, gl])
 
   useFrame((state, delta) => {
     // Clamp delta so a backgrounded tab does not jump the animation on return.
@@ -65,17 +123,36 @@ function OrbitingCore({ viewportWidth }: { viewportWidth: number }) {
     }
     if (ringOuter.current) ringOuter.current.rotation.z = t * 0.35
     if (ringInner.current) ringInner.current.rotation.x = t * -0.28
+    // Chase the drag target with a soft spring feel, then write it onto the ball.
+    dragCurrent.current.x += (dragTarget.current.x - dragCurrent.current.x) * Math.min(dt * 10, 1)
+    dragCurrent.current.y += (dragTarget.current.y - dragCurrent.current.y) * Math.min(dt * 10, 1)
+    if (ball.current) ball.current.position.set(dragCurrent.current.x, dragCurrent.current.y, 0)
   })
 
-  return <group ref={root}>
+  // Dragging anywhere on the assembly moves the white core; the cage, rings and
+  // Float idle keep running. Double-click glides the core back to the centre.
+  return <group
+    ref={root}
+    onPointerDown={(e) => {
+      if (e.button > 0) return
+      e.stopPropagation()
+      dragging.current = true
+      lastPointer.current = { x: e.clientX, y: e.clientY }
+      document.body.style.userSelect = 'none'
+      const canvasEl = gl.domElement as unknown as { style: { cursor: string } }
+      canvasEl.style.cursor = 'grabbing'
+    }}
+    onDoubleClick={(e) => { e.stopPropagation(); dragTarget.current.x = 0; dragTarget.current.y = 0 }}
+  >
     <Float speed={1.3} rotationIntensity={0.35} floatIntensity={0.7}>
       <mesh ref={shell} rotation={[0.4, 0, 0.3]}>
         <icosahedronGeometry args={[1.5, 1]} />
         <meshStandardMaterial color="#c5ff3d" roughness={0.25} metalness={0.7} wireframe />
       </mesh>
-      <Sphere args={[0.73, 32, 32]}>
+      <mesh ref={ball}>
+        <sphereGeometry args={[0.73, 32, 32]} />
         <meshStandardMaterial color="#f7f7f2" roughness={0.18} metalness={0.2} />
-      </Sphere>
+      </mesh>
       <mesh ref={ringOuter} rotation={[Math.PI / 2, 0.2, 0]}>
         <torusGeometry args={[1.95, 0.018, 12, 96]} />
         <meshStandardMaterial color="#c5ff3d" emissive="#789900" emissiveIntensity={0.8} />

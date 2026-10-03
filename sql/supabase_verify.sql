@@ -13,7 +13,10 @@
 --  7. Adds the reviewer SELECT policies on `applications` and
 --     `application_images` that /dashboard needs — without them the reviewer
 --     desk shows "00 total" with no error, because RLS returns an empty list.
---  8. Prints a verification report (tables, policies, bucket, counts).
+--  8. Aligns the legacy `applications` body-fat check constraint with the app
+--     (NULL or 1-100), so inserts cannot fail with a raw
+--     "applications_body_fat_pct_check" violation.
+--  9. Prints a verification report (tables, policies, bucket, counts).
 -- Nothing is dropped, truncated, or deleted.
 begin;
 
@@ -157,6 +160,15 @@ drop policy if exists "applications update reviewers" on public.applications;
 create policy "applications update reviewers" on public.applications
   for update to authenticated using (public.is_reviewer()) with check (public.is_reviewer());
 
+-- 8. Body-fat constraint alignment (v0 drift) ---------------------------------
+-- The v0-created database can carry a body-fat rule the form can violate
+-- (raw "applications_body_fat_pct_check" errors on submit). The app stores
+-- blank as NULL and validates 1-100, so make the database agree. `not valid`
+-- keeps the check enforced for every new insert without scanning old rows.
+alter table public.applications drop constraint if exists applications_body_fat_pct_check;
+alter table public.applications add constraint applications_body_fat_pct_check
+  check (body_fat_pct is null or (body_fat_pct >= 1 and body_fat_pct <= 100)) not valid;
+
 drop policy if exists "application_images insert public" on public.application_images;
 create policy "application_images insert public" on public.application_images
   for insert to anon, authenticated with check (true);
@@ -208,7 +220,7 @@ select 'reviewer' as check,
 from auth.users u
 order by u.created_at;
 
--- 8. Storage policies + stored objects ----------------------------------------
+-- 10. Storage policies + stored objects ----------------------------------------
 select 'storage policy' as check, policyname as name, 'exists' as status
 from pg_policies
 where schemaname = 'storage' and tablename = 'objects' and policyname like 'application-images%'

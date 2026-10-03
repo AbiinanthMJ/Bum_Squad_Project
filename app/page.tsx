@@ -172,9 +172,17 @@ function ApplicationForm() {
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     setStatus('sending'); setMessage('')
+    // Body fat is optional: blank goes to the database as NULL, and anything
+    // outside 1-100 gets a readable message here instead of the raw Postgres
+    // check-constraint error ("applications_body_fat_pct_check").
+    const bodyFatRaw = form.body_fat_pct.trim()
+    const bodyFatPct = bodyFatRaw === '' ? null : Number(bodyFatRaw)
+    if (bodyFatPct !== null && (!Number.isFinite(bodyFatPct) || bodyFatPct < 1 || bodyFatPct > 100)) {
+      setStatus('error'); setMessage('Body fat must be between 1 and 100, or leave the field blank if you do not know it.'); return
+    }
     const supabase = createClient()
     const applicationId = crypto.randomUUID()
-    const { error } = await supabase.from('applications').insert({ id: applicationId, ...form, age: Number(form.age), height_cm: Number(form.height_cm), weight_kg: Number(form.weight_kg), body_fat_pct: form.body_fat_pct ? Number(form.body_fat_pct) : null })
+    const { error } = await supabase.from('applications').insert({ id: applicationId, ...form, age: Number(form.age), height_cm: Number(form.height_cm), weight_kg: Number(form.weight_kg), body_fat_pct: bodyFatPct })
     if (error) { setStatus('error'); setMessage('We could not save your application. ' + error.message); return }
     // Photos go to the private 'application-images' bucket, then get linked in the
     // 'application_images' table. Failures are collected instead of silently ignored, so

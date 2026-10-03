@@ -310,7 +310,7 @@ create table if not exists public.applications (
   phone          text,
   height_cm      numeric,
   weight_kg      numeric,
-  body_fat_pct   numeric,
+  body_fat_pct   numeric check (body_fat_pct is null or (body_fat_pct >= 1 and body_fat_pct <= 100)),
   goals          text,
   concerns       text,
   consent        boolean default true,

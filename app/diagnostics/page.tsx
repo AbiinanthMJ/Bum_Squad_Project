@@ -57,7 +57,7 @@ export default function DiagnosticsPage() {
       if (url && key) {
         try {
           const res = await fetch(url + '/storage/v1/bucket/application-images', { headers: { apikey: key, Authorization: 'Bearer ' + key } })
-          add(res.ok ? 'OK' : 'FAIL', 'bucket application-images: HTTP ' + res.status + (res.ok ? '' : ' - run supabase_verify.sql section 6'))
+          add(res.ok ? 'OK' : 'FAIL', 'bucket application-images: HTTP ' + res.status + (res.ok ? '' : ' - run sql/supabase_verify.sql section 6'))
         } catch (error) {
           add('FAIL', 'bucket application-images: ' + (error instanceof Error ? error.message : String(error)))
         }
@@ -67,7 +67,7 @@ export default function DiagnosticsPage() {
       if (!user) setVerdict('No session here. Sign in at /dashboard, then reload this page.')
       else if ((user.app_metadata as { role?: string } | undefined)?.role !== 'reviewer') setVerdict('Gate closed: this account has no reviewer role. Run the promotion SQL that /dashboard shows, then reload.')
       else if (!reviewerFn) setVerdict('Gate closed: the token says reviewer but is_reviewer() disagrees - the token is stale. Sign out and back in at /dashboard.')
-      else if (appCount === 0) setVerdict('Gate closed: role is valid but reading `applications` returned 0 rows, so the SELECT policy is missing. Run supabase_verify.sql section 8.')
+      else if (appCount === 0) setVerdict('Gate closed: role is valid but reading `applications` returned 0 rows, so the SELECT policy is missing. Run sql/supabase_verify.sql section 8.')
       else setVerdict('All gates open: this token can read ' + appCount + ' application row(s), so /dashboard should list them.')
     }
     run().catch((error: unknown) => setVerdict('Diagnostics crashed: ' + (error instanceof Error ? error.message : String(error))))

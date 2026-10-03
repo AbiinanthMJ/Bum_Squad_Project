@@ -30,7 +30,7 @@ export async function explainEmptyBoard(): Promise<string> {
   try {
     const { data } = await createClient().rpc('is_reviewer')
     if (data !== true) return ''
-    return 'Your reviewer role is active, so this is a row level security gap rather than an empty table: no SELECT policy exists for reviewers here. Run supabase_verify.sql (section 8) in the Supabase SQL editor, then reload this page.'
+    return 'Your reviewer role is active, so this is a row level security gap rather than an empty table: no SELECT policy exists for reviewers here. Run sql/supabase_verify.sql (section 8) in the Supabase SQL editor, then reload this page.'
   } catch {
     return ''
   }

@@ -70,7 +70,7 @@ async function main() {
   const content = await call('/rest/v1/site_content?select=content_key')
   if (content.status === 200) {
     const keys = JSON.parse(content.text || '[]').map((row) => row.content_key)
-    add(keys.length ? 'OK' : 'WARN', 'content studio rows', keys.length ? keys.join(', ') : 'none - run supabase_verify.sql')
+    add(keys.length ? 'OK' : 'WARN', 'content studio rows', keys.length ? keys.join(', ') : 'none - run sql/supabase_verify.sql')
   } else add('FAIL', 'content studio rows', 'HTTP ' + content.status)
 
   const answered = await call('/rest/v1/community_questions?select=id&answer=not.is.null')
@@ -84,7 +84,7 @@ async function main() {
     let visibility = 'private'
     try { visibility = JSON.parse(bucket.text).public ? 'PUBLIC (should be private)' : 'private' } catch {}
     add('OK', 'bucket application-images', 'exists, ' + visibility)
-  } else add('FAIL', 'bucket application-images', 'missing - run supabase_verify.sql section 6')
+  } else add('FAIL', 'bucket application-images', 'missing - run sql/supabase_verify.sql section 6')
 
   const probes = [
     ['community_questions', { id: 'not-a-uuid', name: 'db-check', email: 'db-check@example.com', question: 'db-check' }],
@@ -106,7 +106,7 @@ async function main() {
   console.log('')
   for (const row of rows) console.log('[' + row.status + '] ' + row.area.padEnd(width) + '  ' + row.detail)
   console.log('')
-  console.log(failures === 0 ? 'All required checks passed.' : failures + ' check(s) need attention (see supabase_verify.sql / SUPABASE_SETUP.md).')
+  console.log(failures === 0 ? 'All required checks passed.' : failures + ' check(s) need attention (see sql/supabase_verify.sql / SUPABASE_SETUP.md).')
   console.log('Reviewer-only policies (is_reviewer) cannot be probed with the public key; verify them by signing in at /dashboard.')
   process.exit(failures === 0 ? 0 : 1)
 }

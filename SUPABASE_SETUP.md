@@ -62,15 +62,15 @@ everything the app expects.
 
 Supabase dashboard → **Authentication → URL Configuration**:
 
-- **Site URL**: your production URL (`https://bum-squad.vercel.app`). It is only the fallback
+- **Site URL**: your production URL (`https://bum-squad-project-dwcj.vercel.app`). It is only the fallback
   when the app passes no redirect — `lib/auth-redirect.ts` always passes one — so leaving it on
   `localhost` makes any un-redirected link (dashboard invites) land on your machine.
 - **Redirect URLs** (add all four: the `/auth/callback` entry is what the app handles, `/**`
   covers the rest of the site, including Vercel preview URLs if you add a wildcard):
   - `http://localhost:3000/auth/callback`
   - `http://localhost:3000/**`
-  - `https://bum-squad.vercel.app/auth/callback`
-  - `https://bum-squad.vercel.app/**`
+  - `https://bum-squad-project-dwcj.vercel.app/auth/callback`
+  - `https://bum-squad-project-dwcj.vercel.app/**`
 
 Supabase dashboard → **Authentication → Sign In / Providers → Email**:
 
@@ -217,7 +217,7 @@ catches it. That is fine and secure — just not branded. A branded flow means a
 `supabaseEmailRedirect()` (already in `lib/auth-redirect.ts`); that is a feature, not a setup step.
 
 **Add the recovery redirect URL.** Authentication → URL Configuration → Redirect URLs should
-list `http://localhost:3000/auth/callback` *and* `https://<your-app>.vercel.app/auth/callback`,
+list `http://localhost:3000/auth/callback` *and* `https://bum-squad-project-dwcj.vercel.app/auth/callback`,
 or the reset link has nowhere valid to return to.
 
 Keep Confirm email **OFF** even with Brevo connected: sign-up keeps returning a session
@@ -530,7 +530,7 @@ If the auth check created an account (`db-check+…@mailinator.com`), delete it 
 - **Do not** set `NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL` in production (it would force the
   localhost callback); the app automatically falls back to the deployed origin
   (`lib/auth-redirect.ts` additionally ignores that override on non-local hosts).
-- Add the production callback URL, e.g. `https://<your-app>.vercel.app/auth/callback`,
+- Add the production callback URL `https://bum-squad-project-dwcj.vercel.app/auth/callback`,
   to Supabase → Authentication → URL Configuration → Redirect URLs.
 - After this audit the app ships a `proxy.ts` (`lib/supabase/middleware.ts`)
   that refreshes auth cookies on every request — required for the PKCE

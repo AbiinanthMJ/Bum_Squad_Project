@@ -1,10 +1,12 @@
 # BUM. (Team Yuva) — personal coaching platform
 
+[![CI](https://github.com/AbiinanthMJ/Bum_Squad_Project/actions/workflows/ci.yml/badge.svg)](https://github.com/AbiinanthMJ/Bum_Squad_Project/actions/workflows/ci.yml)
+
 A production coaching site built with **Next.js 16 (App Router) + Supabase**: a public marketing
 site with an application funnel, a gated client progress dashboard, and a reviewer back office
 for approvals, applications and site copy.
 
-Live deploy: **https://bum-squad.vercel.app** (Vercel project `bum_squad`, Production from `main`).
+Live deploy: **https://bum-squad-project-dwcj.vercel.app** (Vercel project `bum-squad-project-dwcj`, Production from `main`).
 
 ---
 
@@ -159,7 +161,7 @@ Database/setup one-liners:
 2. Vercel → Add New → Project → Import the repo (Framework Preset: Next.js).
 3. Add the `NEXT_PUBLIC_*` env vars above to **all** environments (Production + Preview +
    Development) — the anon/publishable key is safe in the browser because RLS protects the data.
-4. Deploy. Every push to `main` redeploys production; pull requests get preview URLs.
+4. Deploy. Every push to `main` redeploys production; pull requests get preview URLs. CI (`.github/workflows/ci.yml`) typechecks and builds every push/PR.
 5. In Supabase → **Authentication → URL Configuration → Redirect URLs**, add
-   `https://<your-app>.vercel.app/auth/callback` (keep the localhost one for dev).
+   `https://bum-squad-project-dwcj.vercel.app/auth/callback` (keep the localhost one for dev).
 

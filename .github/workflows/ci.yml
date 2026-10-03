@@ -1,0 +1,48 @@
+# CI pipeline: runs on every push to main and every pull request.
+# Typechecks the code and proves a production build succeeds BEFORE Vercel
+# deploys (Vercel remains the CD half: main -> production, PRs -> preview URLs).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push cancels an in-progress run for the same branch/PR.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck & build
+    runs-on: ubuntu-latest
+    env:
+      # Placeholder Supabase values. All data access happens client-side, so
+      # the CI build never calls Supabase — these exist only so the
+      # NEXT_PUBLIC_* lookups resolve while `next build` prerenders pages.
+      NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # No explicit version: the action reads `packageManager` (pnpm@12.3.4)
+      # from package.json, so CI uses the exact same pnpm as the project.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Production build
+        run: pnpm build
